@@ -1,164 +1,228 @@
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
-<title>Admin Control Panel</title>
-
+<title>Admin Panel</title>
 <style>
-
 body{
 background:#121212;
 color:white;
 font-family:Arial;
 text-align:center;
 }
-
-input{
+input, button{
 padding:10px;
 margin:5px;
 }
-
-button{
-padding:10px 20px;
-margin:5px;
+.gallery{
+display:flex;
+flex-wrap:wrap;
+justify-content:center;
 }
-
 .panel{
 margin-top:40px;
+border:1px solid #444;
+padding:20px;
+border-radius:10px;
 }
-
 </style>
-
 </head>
-
 <body>
 
 <div id="login">
-
 <h2>Admin Login</h2>
-
 <input id="user" placeholder="Username">
-
-<input type="password" id="pass" placeholder="Password">
-
+<input id="pass" type="password" placeholder="Password">
 <br>
-
 <button onclick="login()">Login</button>
-
 </div>
 
 <div id="panel" style="display:none">
-
 <h1>Admin Dashboard</h1>
 
 <div class="panel">
-
 <h3>Upload Media</h3>
-
 <input type="file" id="file">
-
+<select id="filetype">
+<option value="photos">Photo</option>
+<option value="videos">Video</option>
+</select>
 <button onclick="upload()">Upload</button>
-
 </div>
 
 <div class="panel">
-
 <h3>Change Viewer Password</h3>
-
-<input id="newpass">
-
+<input id="newpass" placeholder="New Password">
 <button onclick="changePassword()">Change</button>
-
 </div>
 
 <div class="panel">
-
 <h3>Lock Media File</h3>
-
 <input id="lockfile" placeholder="filename.jpg">
-
 <button onclick="lockFile()">Lock</button>
+<button onclick="unlockFile()">Unlock</button>
+</div>
 
+<div class="panel">
+<h3>Login Logs</h3>
+<button onclick="showLogs()">View Logs</button>
+<div id="logs" style="max-height:200px; overflow:auto;"></div>
 </div>
 
 </div>
 
 <script>
-
+// Your GitHub info
 const username="ishantsub"
 const repo="media-storage"
+const token="YOUR_PERSONAL_ACCESS_TOKEN_HERE" // Full repo access token
 
 async function login(){
-
 let u=document.getElementById("user").value
 let p=document.getElementById("pass").value
 
-let res=await fetch(
-`https://raw.githubusercontent.com/${username}/${repo}/main/config/users.json`
-)
-
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/users.json`)
 let data=await res.json()
+let fileContent=atob(data.content)
+let users=JSON.parse(fileContent)
 
 let ok=false
-
-data.admins.forEach(a=>{
-if(a.username===u && a.password===p){
-ok=true
-}
+users.admins.forEach(a=>{
+if(a.username===u && a.password===p) ok=true
 })
 
 if(ok){
-
 document.getElementById("login").style.display="none"
 document.getElementById("panel").style.display="block"
-
-recordLogin(u)
-
+await recordLogin(u)
 }else{
-
 alert("Wrong admin login")
-
+}
 }
 
-}
-
+// Record admin login in accesslog.json
 async function recordLogin(user){
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/accesslog.json`)
+let data=await res.json()
+let logContent=atob(data.content)
+let logs=JSON.parse(logContent)
+logs.push({user:user,time:new Date().toISOString()})
 
-let log={
-user:user,
-time:new Date().toISOString()
+// Update via GitHub API
+await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/accesslog.json`,{
+method:"PUT",
+headers:{
+"Authorization":"token "+token
+},
+body:JSON.stringify({
+message:"Record login",
+content:btoa(JSON.stringify(logs,null,2)),
+sha:data.sha
+})
+})
+console.log("Login recorded for",user)
 }
 
-console.log("Login recorded",log)
-
+// Upload files
+async function upload(){
+let file=document.getElementById("file").files[0]
+if(!file){alert("Select a file"); return;}
+let folder=document.getElementById("filetype").value
+let reader=new FileReader()
+reader.onload=async function(){
+let base64=reader.result.split(",")[1]
+let path=`media/${folder}/${file.name}`
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/${path}`)
+let sha=null
+if(res.status===200){
+let d=await res.json()
+sha=d.sha
+}
+await fetch(`https://api.github.com/repos/${username}/${repo}/contents/${path}`,{
+method:"PUT",
+headers:{"Authorization":"token "+token},
+body:JSON.stringify({
+message:"Upload "+file.name,
+content:base64,
+sha:sha
+})
+})
+alert("Uploaded "+file.name)
+}
+reader.readAsDataURL(file)
 }
 
-function upload(){
-
-alert("Upload will be handled through GitHub for now")
-
-}
-
-function changePassword(){
-
+// Change viewer password
+async function changePassword(){
 let newpass=document.getElementById("newpass").value
-
-alert("Change password in settings.json to: "+newpass)
-
+if(!newpass){alert("Enter password"); return;}
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/settings.json`)
+let data=await res.json()
+let content=atob(data.content)
+let settings=JSON.parse(content)
+settings.viewerPassword=newpass
+await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/settings.json`,{
+method:"PUT",
+headers:{"Authorization":"token "+token},
+body:JSON.stringify({
+message:"Change viewer password",
+content:btoa(JSON.stringify(settings,null,2)),
+sha:data.sha
+})
+})
+alert("Viewer password updated")
 }
 
-function lockFile(){
-
+// Lock file
+async function lockFile(){
 let file=document.getElementById("lockfile").value
+if(!file){alert("Enter filename"); return;}
+await updateVisibility(file,true)
+}
 
-alert("Add "+file+" to visibility.json locked list")
+// Unlock file
+async function unlockFile(){
+let file=document.getElementById("lockfile").value
+if(!file){alert("Enter filename"); return;}
+await updateVisibility(file,false)
+}
 
+// Update visibility.json
+async function updateVisibility(file,lock){
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/visibility.json`)
+let data=await res.json()
+let content=atob(data.content)
+let vis=JSON.parse(content)
+if(lock){
+if(!vis.locked.includes(file)) vis.locked.push(file)
+}else{
+vis.locked=vis.locked.filter(f=>f!==file)
+}
+await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/visibility.json`,{
+method:"PUT",
+headers:{"Authorization":"token "+token},
+body:JSON.stringify({
+message:(lock?"Lock ":"Unlock ")+file,
+content:btoa(JSON.stringify(vis,null,2)),
+sha:data.sha
+})
+})
+alert((lock?"Locked ":"Unlocked ")+file)
+}
+
+// View logs
+async function showLogs(){
+let res=await fetch(`https://api.github.com/repos/${username}/${repo}/contents/config/accesslog.json`)
+let data=await res.json()
+let logs=JSON.parse(atob(data.content))
+let container=document.getElementById("logs")
+container.innerHTML=""
+logs.forEach(l=>{
+let div=document.createElement("div")
+div.textContent=l.user+" → "+l.time
+container.appendChild(div)
+})
 }
 
 </script>
-
 </body>
-
 </html>
