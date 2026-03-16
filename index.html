@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<title>Admin Control Panel</title>
+
+<style>
+
+body{
+background:#121212;
+color:white;
+font-family:Arial;
+text-align:center;
+}
+
+input{
+padding:10px;
+margin:5px;
+}
+
+button{
+padding:10px 20px;
+margin:5px;
+}
+
+.panel{
+margin-top:40px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="login">
+
+<h2>Admin Login</h2>
+
+<input id="user" placeholder="Username">
+
+<input type="password" id="pass" placeholder="Password">
+
+<br>
+
+<button onclick="login()">Login</button>
+
+</div>
+
+<div id="panel" style="display:none">
+
+<h1>Admin Dashboard</h1>
+
+<div class="panel">
+
+<h3>Upload Media</h3>
+
+<input type="file" id="file">
+
+<button onclick="upload()">Upload</button>
+
+</div>
+
+<div class="panel">
+
+<h3>Change Viewer Password</h3>
+
+<input id="newpass">
+
+<button onclick="changePassword()">Change</button>
+
+</div>
+
+<div class="panel">
+
+<h3>Lock Media File</h3>
+
+<input id="lockfile" placeholder="filename.jpg">
+
+<button onclick="lockFile()">Lock</button>
+
+</div>
+
+</div>
+
+<script>
+
+const username="ishantsub"
+const repo="media-storage"
+
+async function login(){
+
+let u=document.getElementById("user").value
+let p=document.getElementById("pass").value
+
+let res=await fetch(
+`https://raw.githubusercontent.com/${username}/${repo}/main/config/users.json`
+)
+
+let data=await res.json()
+
+let ok=false
+
+data.admins.forEach(a=>{
+if(a.username===u && a.password===p){
+ok=true
+}
+})
+
+if(ok){
+
+document.getElementById("login").style.display="none"
+document.getElementById("panel").style.display="block"
+
+recordLogin(u)
+
+}else{
+
+alert("Wrong admin login")
+
+}
+
+}
+
+async function recordLogin(user){
+
+let log={
+user:user,
+time:new Date().toISOString()
+}
+
+console.log("Login recorded",log)
+
+}
+
+function upload(){
+
+alert("Upload will be handled through GitHub for now")
+
+}
+
+function changePassword(){
+
+let newpass=document.getElementById("newpass").value
+
+alert("Change password in settings.json to: "+newpass)
+
+}
+
+function lockFile(){
+
+let file=document.getElementById("lockfile").value
+
+alert("Add "+file+" to visibility.json locked list")
+
+}
+
+</script>
+
+</body>
+
+</html>
